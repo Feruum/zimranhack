@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "components/ThinkTogether/thinktogether.module.css"
+        ],
+        "createdAt": "2026-11-14T21:01:22.399Z",
+        "reason": "Agent review: the only matching declaration is .prose blockquote, a semantic quotation rule rather than a card accent; the native theme already gives it the neutral border color."
+      }
+    ]
+  }
+}

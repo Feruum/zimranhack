@@ -1,0 +1,4 @@
+# Overlay installed on top of the locked LearnHouse API environment.
+# Polar's maintained SDK is `polar.v2026_10`, not the archived `polar_sdk`.
+polar-sdk==1.1.0
+celery[redis]==5.7.0

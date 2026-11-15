@@ -1,0 +1,31 @@
+export interface Readiness { profile_complete: boolean; domain_diagnostic_complete: boolean; cognitive_complete: boolean; ready: boolean }
+export interface Program { id: string; title: string; description: string; status: string; is_sample: boolean; full_curriculum: boolean; version: number; blueprint_version: string; internal_id?: number; curriculum?: Record<string, unknown> }
+export interface Profile { goal: string; exam_date: string; minutes_per_day: number; timezone: string; language: string; program_id?: string; schedule_slots: { weekday: number; local_time: string }[]; readiness: Readiness; domain_profile: AssessmentProfile; cognitive_profile: AssessmentProfile; assessment_notice: string }
+export interface AssessmentProfile { dimension_scores?: Record<string, number>; interpretation?: string; diagnostic_id?: string }
+export interface Skill { id: string; code: string; title: string; description: string; domain: string; prerequisites: string[]; state: string; independent_days: number; independent_families: number; evidence_ids: string[] }
+export interface Activity { kind: string; item_id?: string; lesson_id?: string; skill_id?: string; review_id?: string; title?: string; minutes: number; reason: string }
+export interface ExamMockTarget { id: string; title: string; duration_minutes: number; target_date: string; href: string }
+export interface ExamStudyWeek { number: number; starts_on: string; ends_on: string; available_minutes: number; planned_minutes: number; focus_skills: { id: string; title: string; target_date: string }[]; review_count: number; mocks: ExamMockTarget[]; over_capacity: boolean }
+export interface ExamDeadline { version: string; status: 'not_configured' | 'exam_today' | 'exam_passed' | 'needs_content' | 'at_risk' | 'complete' | 'on_pace'; exam_date: string; days_remaining: number | null; weeks_remaining: number | null; available_minutes: number; required_minutes: number; shortfall_minutes: number; recommended_minutes_per_day: number; independent_applications_remaining: number; pending_review_count: number; content_gaps: string[]; warnings: { code: string; message: string }[]; mocks: ExamMockTarget[]; weeks: ExamStudyWeek[]; notice: string; capacity_basis: string; preview_truncated?: boolean }
+export interface Plan { id: string; activities: Activity[]; rationale: string[]; budget_minutes: number; total_minutes: number; status: string; plan_date: string; deadline?: ExamDeadline }
+export interface Today { profile: Profile; plan: Plan; skills: Skill[] }
+export type PracticeMode = 'case' | 'retell' | 'think_first'
+export interface Item { id: string; title: string; prompt: string; kind: 'single_choice' | 'multiple_choice' | 'numeric' | 'reasoning' | 'matching'; choices: { id: string; text: string; side?: 'left' | 'right' }[]; estimated_minutes: number; is_sample?: boolean; practice_mode?: PracticeMode; source_material?: string; ai_answer?: string }
+export type ResponseValue = { choice: string } | { choices: string[] } | { value: number } | { text: string } | { matches: Record<string, string> }
+export interface Delivery { delivery_id: string; item: Item; phase: string; selection_reason?: string }
+export interface Attempt { id: string; item_id: string; response: ResponseValue; phase: string; assessment_kind?: 'domain' | 'cognitive' | null; created_at: string; status: string; score: number | null; assisted: boolean; independent_evidence: boolean; evaluation: { feedback?: string; method?: string; dimensions?: Record<string, number> } | null; explanation?: string }
+export interface Instrument { id: string; title: string; kind: 'domain' | 'cognitive'; consent_version: string; consent_text: string; consented: boolean }
+export interface DiagnosticRun { id: string; kind: string; status: string; result?: AssessmentProfile }
+export interface DiagnosticOptions { instruments: Instrument[]; runs: DiagnosticRun[]; readiness: Readiness }
+export interface Diagnostic extends Partial<Delivery> { run: DiagnosticRun; answered: number; total: number }
+export interface Lesson { id: string; title: string; body_markdown?: string; objectives?: string[]; estimated_minutes: number; is_sample: boolean; completed?: boolean; completed_at?: string }
+export interface MockForm { id: string; title: string; duration_minutes: number; question_count: number; is_sample: boolean; status: string }
+export interface MockRun { id: string; status: string; deadline: string; score: number | null; result: { notice?: string; unanswered?: number }; questions: { item: Item; answered: boolean; delivery_id: string; response?: ResponseValue; explanation?: string }[]; answered: number; total: number }
+export interface Review { id: string; skill_id: number | string; status: string; due_at: string; interval_days: number }
+export interface Schedule { weekday?: number; local_time?: string; duration_minutes?: number }
+export interface Cohort { id: string; cohort_uuid?: string; title: string; language: string; timezone: string; schedule: Schedule; capacity: number; member_count?: number; status?: string; members?: { user_uuid: string; name: string; role?: string }[] }
+export interface Room { id: string; title: string; starts_at: string; duration_minutes: number; phase: string; revision: number; board_uuid: string; roles: Record<string, string>; agent_enabled: boolean; case?: Item | null; media_enforcement_pending?: boolean }
+export interface RoomEvent { id: number; kind: string; payload: { text?: string; author?: string; phase?: string; granted?: boolean; approved_board_summary?: string }; created_at?: string }
+export interface Billing { checkout_enabled: boolean; has_active_access: boolean; environment: string; missing: string[]; products: { program_uuid: string; price_amount: number; currency: string; access_days: number }[]; cohorts: { cohort_uuid: string; title: string; schedule: Schedule; timezone: string; language: string }[]; entitlements: { entitlement_uuid: string; program_uuid: string; status: string; source: string; starts_at: string; expires_at: string }[] }
+export interface ContentRecord { id: string; title: string; status: string; is_sample: boolean; version?: number; internal_id?: number; [key: string]: unknown }
+export interface Content { programs: Program[]; items: ContentRecord[]; lessons: ContentRecord[]; mock_forms: ContentRecord[] }

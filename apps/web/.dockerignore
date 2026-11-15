@@ -1,0 +1,7 @@
+node_modules
+.next
+.env*
+runtime-config.json
+public/runtime-config.js
+*.log
+.git

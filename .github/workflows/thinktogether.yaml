@@ -1,0 +1,133 @@
+name: ThinkTogether integration
+permissions:
+  contents: read
+on:
+  pull_request:
+    paths:
+      - 'apps/api/**'
+      - 'apps/web/**'
+      - 'apps/voice-agent/**'
+      - 'apps/collab/**'
+      - 'docker/thinktogether/**'
+      - 'docs/thinktogether/**'
+      - 'scripts/bundle-thinktogether-source.ps1'
+      - 'scripts/thinktogether-backup-restore.ps1'
+      - '.github/workflows/thinktogether.yaml'
+      - '.bun-version'
+      - '.gitignore'
+      - '.dockerignore'
+      - 'LICENSE'
+      - 'README.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Public, disposable CI configuration. Never use this key in a deployment.
+  LEARNHOUSE_AUTH_JWT_SECRET_KEY: ci-only-thinktogether-jwt-not-for-production-2026
+
+jobs:
+  domain-and-migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: thinktogether
+          POSTGRES_PASSWORD: ci-local-only
+          POSTGRES_DB: thinktogether
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U thinktogether" --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Build the fork API
+        run: docker build -f docker/thinktogether/Dockerfile.api -t tt-api-ci .
+      - name: API invariants and PostgreSQL last-seat race
+        run: >-
+          docker run --rm --network host
+          -e LEARNHOUSE_DISABLE_EE=1 -e TESTING=true
+          -e LEARNHOUSE_AUTH_JWT_SECRET_KEY
+          -e TT_TEST_DATABASE_URL=postgresql+asyncpg://thinktogether:ci-local-only@localhost:5432/thinktogether
+          tt-api-ci /app/api/.venv/bin/python -m pytest src/tests/thinktogether -q
+      - name: Explicit migration round trip
+        run: >-
+          docker run --rm --network host
+          -e LEARNHOUSE_DISABLE_EE=1
+          -e LEARNHOUSE_AUTH_JWT_SECRET_KEY
+          -e LEARNHOUSE_SQL_CONNECTION_STRING=postgresql://thinktogether:ci-local-only@localhost:5432/thinktogether
+          tt-api-ci /app/api/.venv/bin/python scripts/verify_thinktogether_migration.py
+  voice-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Voice native image and deterministic transport tests
+        run: |
+          docker build -t tt-voice-ci apps/voice-agent
+          docker run --rm tt-voice-ci python -m unittest discover -s tests -v
+
+  board-tests-and-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '26.13.0'
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - name: Install board test dependencies
+        working-directory: apps/collab
+        run: bun install --frozen-lockfile
+      - name: Board protocol, phase ACL and private-note tests
+        working-directory: apps/collab
+        # tsx keeps its Node shebang; do not use `bun --bun` for Hocuspocus.
+        run: bun run test
+      - name: Shared board production image
+        run: docker build -t tt-collab-ci apps/collab
+
+  web-and-corresponding-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Bundle corresponding source from the clean checkout
+        shell: pwsh
+        run: ./scripts/bundle-thinktogether-source.ps1
+      - name: Check required source and exclude environment/runtime data
+        shell: bash
+        run: |
+          archive=apps/web/public/thinktogether-source.tar.gz
+          paths="$RUNNER_TEMP/tt-source-paths.txt"
+          test -s "$archive"
+          tar -tzf "$archive" > "$paths"
+          grep -Fx LICENSE "$paths"
+          grep -Fx docs/thinktogether/RUNBOOK.md "$paths"
+          grep -Fx .github/workflows/thinktogether.yaml "$paths"
+          grep -Fx apps/api/src/services/thinktogether/learning_evidence.py "$paths"
+          grep -Fx apps/web/components/ThinkTogether/Shell.tsx "$paths"
+          if grep -E '(^|/)\.env' "$paths" | grep -Ev '\.example$'; then
+            echo 'Corresponding source contains a non-example environment file.'
+            exit 1
+          fi
+          if grep -E '(^|/)(\.git|\.learnhouse|\.worktrees|node_modules|\.next|__pycache__|\.frontend-workbench|\.playwright-mcp)(/|$)|\.(dump|sqlite|sqlite3)$|(^|/)thinktogether-source\.tar\.gz$' "$paths"; then
+            echo 'Corresponding source contains runtime, backup, cache or recursive archive content.'
+            exit 1
+          fi
+      - name: Build the public web production image
+        run: docker build --build-arg LEARNHOUSE_PUBLIC=true --build-arg BUILD_ID="${GITHUB_SHA}" -t tt-web-ci apps/web
+      - name: Require the identical source archive inside the web image
+        shell: bash
+        run: |
+          container=$(docker create tt-web-ci)
+          trap 'docker rm -f "$container" >/dev/null' EXIT
+          packaged="$RUNNER_TEMP/tt-web-source.tar.gz"
+          docker cp "$container:/app/public/thinktogether-source.tar.gz" "$packaged"
+          source_sha=$(sha256sum apps/web/public/thinktogether-source.tar.gz | cut -d ' ' -f 1)
+          image_sha=$(sha256sum "$packaged" | cut -d ' ' -f 1)
+          test "$source_sha" = "$image_sha"
+          echo "Corresponding source SHA-256: $image_sha"

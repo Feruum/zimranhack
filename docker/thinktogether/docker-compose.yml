@@ -1,0 +1,133 @@
+name: thinktogether
+
+x-api: &api
+  image: thinktogether-api:local
+  build:
+    context: ../..
+    dockerfile: docker/thinktogether/Dockerfile.api
+  env_file: .env
+  restart: unless-stopped
+  volumes:
+    - content:/app/api/content
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: thinktogether
+      POSTGRES_DB: thinktogether
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set database password}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "thinktogether", "-d", "thinktogether"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory-policy noeviction
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+
+  api:
+    <<: *api
+    ports:
+      - "127.0.0.1:${TT_API_PORT:-1349}:9000"
+
+  worker:
+    <<: *api
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["/app/api/.venv/bin/python", "-m", "src.services.thinktogether.jobs_worker", "worker"]
+    healthcheck:
+      disable: true
+
+  scheduler:
+    <<: *api
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["/app/api/.venv/bin/python", "-m", "src.services.thinktogether.jobs_worker", "scheduler"]
+    healthcheck:
+      disable: true
+
+  collab:
+    image: thinktogether-collab:local
+    build:
+      context: ../../apps/collab
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      LEARNHOUSE_API_URL: http://api:9000
+      COLLAB_PORT: 4000
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    image: thinktogether-web:local
+    entrypoint: ["bun", "server-wrapper.js"]
+    build:
+      context: ../../apps/web
+      args:
+        LEARNHOUSE_PUBLIC: "true"
+        NEXT_BUILD_BUNDLER: ${TT_NEXT_BUILD_BUNDLER:-webpack}
+    env_file: .env
+    environment:
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      LEARNHOUSE_INTERNAL_API_URL: http://api:9000
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+  gateway:
+    image: nginx:1.30-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${TT_HTTP_PORT:-8096}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+      - web
+      - collab
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  voice-agent:
+    profiles: [voice]
+    image: thinktogether-voice:local
+    build:
+      context: ../../apps/voice-agent
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TT_API_URL: http://api:9000/api/v1/tt
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  database:
+  content:
+  redis:

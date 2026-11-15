@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "apps/web/components/ThinkTogether/thinktogether.module.css"
+        ],
+        "createdAt": "2026-11-14T19:59:14.803Z",
+        "reason": "Agent review: the sole match is .prose blockquote, a semantic Markdown quotation border rather than a card accent. The native LearnHouse scope already supplies its neutral shared border color."
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "apps/web/components/Dashboard/Pages/Org/OrgEditBranding/BrandingVignettes.tsx"
+        ],
+        "createdAt": "2026-11-15T02:27:49.303Z",
+        "reason": "Agent review: LinkPreviewVignette intentionally depicts a chat link preview; its border-s-2 is identical in HEAD and predates this session. User explicitly limited the change to the name and logo, preserving the existing design."
+      }
+    ]
+  }
+}
